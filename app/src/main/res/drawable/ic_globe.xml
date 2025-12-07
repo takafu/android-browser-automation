@@ -1,0 +1,63 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+
+    <!-- 地球の円 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,4 C16.536,4 4,16.536 4,32 C4,47.464 16.536,60 32,60 C47.464,60 60,47.464 60,32 C60,16.536 47.464,4 32,4 Z" />
+
+    <!-- 経線（縦線） -->
+    <path
+        android:strokeColor="#667eea"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M32,8 C32,8 24,16 24,32 C24,48 32,56 32,56" />
+
+    <path
+        android:strokeColor="#667eea"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M32,8 C32,8 40,16 40,32 C40,48 32,56 32,56" />
+
+    <!-- 緯線（横線） -->
+    <path
+        android:strokeColor="#764ba2"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M10,32 L54,32" />
+
+    <path
+        android:strokeColor="#764ba2"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M12,20 C16,20 20,22 32,22 C44,22 48,20 52,20" />
+
+    <path
+        android:strokeColor="#764ba2"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M12,44 C16,44 20,42 32,42 C44,42 48,44 52,44" />
+
+    <!-- 中央の縦線 -->
+    <path
+        android:strokeColor="#667eea"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M32,8 L32,56" />
+
+    <!-- 外側の円（境界線） -->
+    <path
+        android:strokeColor="#ffffff"
+        android:strokeWidth="3"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M32,4 C16.536,4 4,16.536 4,32 C4,47.464 16.536,60 32,60 C47.464,60 60,47.464 60,32 C60,16.536 47.464,4 32,4 Z" />
+</vector>
