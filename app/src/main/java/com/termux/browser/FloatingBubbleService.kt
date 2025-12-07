@@ -540,6 +540,9 @@ class FloatingBubbleService : Service() {
             windowParams.width = winW
             windowParams.height = winH
             windowManager.updateViewLayout(wrapper, windowParams)
+
+            // デフォルトは85%透過
+            container.alpha = 0.85f
         }
 
         // リサイズハンドルのドラッグ処理
