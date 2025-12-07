@@ -168,8 +168,8 @@ class FloatingBubbleService : Service() {
         container.addView(webViewContainer)
 
         val windowParams = WindowManager.LayoutParams(
-            (resources.displayMetrics.widthPixels * 0.9).toInt(),
-            (resources.displayMetrics.heightPixels * 0.7).toInt(),
+            (resources.displayMetrics.widthPixels * 0.95).toInt(),
+            (resources.displayMetrics.heightPixels * 0.85).toInt(),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -201,6 +201,9 @@ class FloatingBubbleService : Service() {
                 setSupportZoom(true)
                 builtInZoomControls = true
                 displayZoomControls = false
+
+                // ビューポートを大きく設定してデスクトップレイアウトを強制
+                layoutAlgorithm = android.webkit.WebSettings.LayoutAlgorithm.NORMAL
 
                 // デスクトップUserAgent（最新Chrome）
                 userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
