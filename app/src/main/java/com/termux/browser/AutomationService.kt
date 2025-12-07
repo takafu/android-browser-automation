@@ -209,7 +209,22 @@ class AutomationService : Service() {
 
             runOnMainThread {
                 synchronized(lock) {
-                    screenshot = BrowserActivity.instance?.captureScreenshot()
+                    val webView = BrowserActivity.webView
+                    if (webView != null && webView.width > 0 && webView.height > 0) {
+                        val bitmap = android.graphics.Bitmap.createBitmap(
+                            webView.width,
+                            webView.height,
+                            android.graphics.Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = android.graphics.Canvas(bitmap)
+                        webView.draw(canvas)
+
+                        val outputStream = java.io.ByteArrayOutputStream()
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
+                        val bytes = outputStream.toByteArray()
+
+                        screenshot = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    }
                     lock.notify()
                 }
             }

@@ -16,6 +16,7 @@
         <activity
             android:name=".BrowserActivity"
             android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:configChanges="orientation|screenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

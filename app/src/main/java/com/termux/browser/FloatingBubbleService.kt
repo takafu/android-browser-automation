@@ -3,10 +3,12 @@ package com.termux.browser
 import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.util.Base64
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -16,6 +18,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.io.ByteArrayOutputStream
 
 class FloatingBubbleService : Service() {
 
@@ -27,6 +30,12 @@ class FloatingBubbleService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        // WebViewを初期化
+        if (BrowserActivity.webView == null) {
+            BrowserActivity.webView = createWebView()
+        }
+
         createBubble()
     }
 
@@ -146,7 +155,11 @@ class FloatingBubbleService : Service() {
             )
         }
 
-        // BrowserActivityからWebViewを移動
+        // WebViewを作成または再利用
+        if (BrowserActivity.webView == null) {
+            BrowserActivity.webView = createWebView()
+        }
+
         BrowserActivity.webView?.let { webView ->
             (webView.parent as? android.view.ViewGroup)?.removeView(webView)
             webViewContainer.addView(webView)
@@ -175,17 +188,116 @@ class FloatingBubbleService : Service() {
         bubbleView?.visibility = View.GONE
     }
 
+    private fun createWebView(): WebView {
+        return WebView(this).apply {
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                databaseEnabled = true
+
+                // デスクトップモード設定
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                setSupportZoom(true)
+                builtInZoomControls = true
+                displayZoomControls = false
+
+                // デスクトップUserAgent（最新Chrome）
+                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+                // その他の設定
+                javaScriptCanOpenWindowsAutomatically = true
+                mediaPlaybackRequiresUserGesture = false
+                allowFileAccess = true
+                allowContentAccess = true
+
+                // Mixed Contentを許可
+                mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+
+                // より本物のブラウザに近づける
+                setSupportMultipleWindows(false)
+                setGeolocationEnabled(false)
+
+                // キャッシュ設定
+                cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+            }
+
+            // WebViewClient設定
+            webViewClient = object : android.webkit.WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    AutomationService.onPageEvent("page_started", url ?: "")
+
+                    // WebView検出を回避するJavaScriptを注入
+                    view?.evaluateJavascript("""
+                        Object.defineProperty(navigator, 'webdriver', {
+                            get: () => undefined
+                        });
+                    """.trimIndent(), null)
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    AutomationService.onPageEvent("page_finished", url ?: "")
+                }
+
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: android.webkit.WebResourceRequest?,
+                    error: android.webkit.WebResourceError?
+                ) {
+                    super.onReceivedError(view, request, error)
+                    AutomationService.onPageEvent("error", error?.description?.toString() ?: "Unknown error")
+                }
+            }
+
+            // WebChromeClient設定
+            webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
+                    message?.let {
+                        AutomationService.onConsoleMessage(
+                            "${it.message()} (${it.sourceId()}:${it.lineNumber()})"
+                        )
+                    }
+                    return true
+                }
+
+                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    super.onProgressChanged(view, newProgress)
+                    AutomationService.onProgressChanged(newProgress)
+                }
+            }
+
+            loadUrl("about:blank")
+        }
+    }
+
     private fun closeFloatingWindow() {
         floatingWindow?.let {
-            // WebViewを元に戻す
-            val webViewContainer = (it as LinearLayout).getChildAt(1) as FrameLayout
-            webViewContainer.removeAllViews()
-
             windowManager.removeView(it)
             floatingWindow = null
         }
         isExpanded = false
         bubbleView?.visibility = View.VISIBLE
+    }
+
+    fun captureScreenshot(): String? {
+        val webView = BrowserActivity.webView ?: return null
+
+        val bitmap = Bitmap.createBitmap(
+            webView.width,
+            webView.height,
+            Bitmap.Config.ARGB_8888
+        )
+
+        val canvas = android.graphics.Canvas(bitmap)
+        webView.draw(canvas)
+
+        val outputStream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+        val bytes = outputStream.toByteArray()
+
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 
     override fun onDestroy() {
@@ -197,5 +309,7 @@ class FloatingBubbleService : Service() {
             windowManager.removeView(it)
         }
         bubbleView?.let { windowManager.removeView(it) }
+        BrowserActivity.webView?.destroy()
+        BrowserActivity.webView = null
     }
 }
