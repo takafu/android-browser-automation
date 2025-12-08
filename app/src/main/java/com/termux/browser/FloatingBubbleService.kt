@@ -19,9 +19,11 @@ import android.os.IBinder
 import android.util.Base64
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.webkit.WebView
 import android.widget.Button
 import android.widget.FrameLayout
@@ -43,6 +45,8 @@ class FloatingBubbleService : Service() {
 
     private lateinit var windowManager: WindowManager
     private var bubbleView: View? = null
+    private var trashView: View? = null
+    private var trashParams: WindowManager.LayoutParams? = null
     private var floatingWindow: View? = null
     private var floatingWindowParams: WindowManager.LayoutParams? = null
     private var hiddenWebViewContainer: FrameLayout? = null  // バブル状態でWebViewを保持
@@ -172,6 +176,58 @@ class FloatingBubbleService : Service() {
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
+        var velocityTracker: VelocityTracker? = null
+        var isDragging = false
+
+        // ゴミ箱を作成（バブルと同じ描画方法）
+        val trashSize = 130
+        val trash = TextView(this).apply {
+            text = "🗑️"
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_TYPE_UNIFORM)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                setAutoSizeTextTypeUniformWithConfiguration(20, 60, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+            }
+            val padding = 12
+            setPadding(padding, padding, padding, padding)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                colors = intArrayOf(
+                    Color.parseColor("#5a5a5a"),  // グレー
+                    Color.parseColor("#3a3a3a")   // ダークグレー
+                )
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                orientation = GradientDrawable.Orientation.TL_BR
+            }
+            elevation = 16f
+            alpha = 0f  // 初期は非表示
+            scaleX = 0.5f
+            scaleY = 0.5f
+        }
+
+        val trashLayoutParams = WindowManager.LayoutParams(
+            trashSize,
+            trashSize,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = 100
+        }
+
+        trashView = trash
+        trashParams = trashLayoutParams
+        windowManager.addView(trash, trashLayoutParams)
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
 
         bubble.setOnTouchListener { v, event ->
             when (event.action) {
@@ -180,6 +236,13 @@ class FloatingBubbleService : Service() {
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
+                    isDragging = false
+
+                    // VelocityTracker初期化
+                    velocityTracker?.recycle()
+                    velocityTracker = VelocityTracker.obtain()
+                    velocityTracker?.addMovement(event)
+
                     // タップ時に縮小アニメーション
                     v.animate()
                         .scaleX(0.85f)
@@ -189,12 +252,65 @@ class FloatingBubbleService : Service() {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.addMovement(event)
+
+                    val deltaX = Math.abs(event.rawX - initialTouchX)
+                    val deltaY = Math.abs(event.rawY - initialTouchY)
+
+                    // ドラッグ開始判定
+                    if (!isDragging && (deltaX > 10 || deltaY > 10)) {
+                        isDragging = true
+                        // ゴミ箱を表示
+                        trash.animate()
+                            .alpha(1f)
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .setDuration(200)
+                            .start()
+                    }
+
                     params.x = initialX + (initialTouchX - event.rawX).toInt()
                     params.y = initialY + (event.rawY - initialTouchY).toInt()
                     windowManager.updateViewLayout(v, params)
+
+                    // ゴミ箱との距離チェック
+                    if (isDragging) {
+                        val bubbleCenterX = screenWidth - params.x - 65  // バブルの中心X
+                        val bubbleCenterY = params.y + 65  // バブルの中心Y
+                        val trashCenterX = screenWidth / 2
+                        val trashCenterY = screenHeight - 100 - 65  // ゴミ箱の中心Y
+
+                        val distance = Math.sqrt(
+                            Math.pow((bubbleCenterX - trashCenterX).toDouble(), 2.0) +
+                            Math.pow((bubbleCenterY - trashCenterY).toDouble(), 2.0)
+                        )
+
+                        // 近づくとゴミ箱を拡大（即座に切り替え）
+                        val isNear = distance < 200
+                        if (isNear && trash.scaleX < 1.2f) {
+                            trash.animate()
+                                .scaleX(1.3f)
+                                .scaleY(1.3f)
+                                .setDuration(50)
+                                .start()
+                        } else if (!isNear && trash.scaleX > 1.1f) {
+                            trash.animate()
+                                .scaleX(1f)
+                                .scaleY(1f)
+                                .setDuration(50)
+                                .start()
+                        }
+                    }
                     true
                 }
-                MotionEvent.ACTION_UP -> {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    velocityTracker?.addMovement(event)
+                    velocityTracker?.computeCurrentVelocity(1000)
+                    val velocityX = velocityTracker?.xVelocity ?: 0f
+                    val velocityY = velocityTracker?.yVelocity ?: 0f
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+
                     // 元のサイズに戻す
                     v.animate()
                         .scaleX(1f)
@@ -202,9 +318,22 @@ class FloatingBubbleService : Service() {
                         .setDuration(150)
                         .start()
 
-                    if (Math.abs(event.rawX - initialTouchX) < 10 &&
-                        Math.abs(event.rawY - initialTouchY) < 10) {
-                        // リップルエフェクト風アニメーション
+                    // ゴミ箱にドロップされたかチェック
+                    val bubbleCenterX = screenWidth - params.x - 65
+                    val bubbleCenterY = params.y + 65
+                    val trashCenterX = screenWidth / 2
+                    val trashCenterY = screenHeight - 100 - 65
+
+                    val distance = Math.sqrt(
+                        Math.pow((bubbleCenterX - trashCenterX).toDouble(), 2.0) +
+                        Math.pow((bubbleCenterY - trashCenterY).toDouble(), 2.0)
+                    )
+
+                    if (isDragging && distance < 200) {
+                        // ゴミ箱に吸い込まれる
+                        animateToTrash(v, params, trash, screenWidth, screenHeight)
+                    } else if (!isDragging) {
+                        // タップ - ウィンドウを開く
                         v.animate()
                             .scaleX(1.1f)
                             .scaleY(1.1f)
@@ -218,6 +347,9 @@ class FloatingBubbleService : Service() {
                             }
                             .start()
                         openFloatingWindow()
+                    } else {
+                        // 慣性アニメーション（ゴミ箱は表示したまま）
+                        applyFlingAnimation(v, params, trash, velocityX, velocityY, screenWidth, screenHeight)
                     }
                     true
                 }
@@ -227,6 +359,152 @@ class FloatingBubbleService : Service() {
 
         bubbleView = bubble
         windowManager.addView(bubble, params)
+    }
+
+    // ゴミ箱に吸い込まれるアニメーション
+    private fun animateToTrash(
+        bubble: View,
+        params: WindowManager.LayoutParams,
+        trash: View,
+        screenWidth: Int,
+        screenHeight: Int
+    ) {
+        // ゴミ箱の中心座標（画面下部中央）
+        val trashCenterX = screenWidth / 2
+        val trashCenterY = screenHeight - 100 - 65
+
+        // バブルの現在の中心座標
+        val startX = screenWidth - params.x - 65
+        val startY = params.y + 65
+
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 200
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener { animator ->
+                val t = animator.animatedValue as Float
+                // バブルをゴミ箱中心に向かって移動
+                val newCenterX = startX + (trashCenterX - startX) * t
+                val newCenterY = startY + (trashCenterY - startY) * t
+                params.x = (screenWidth - newCenterX - 65).toInt()
+                params.y = (newCenterY - 65).toInt()
+                bubble.scaleX = 1f - t * 0.5f
+                bubble.scaleY = 1f - t * 0.5f
+                try {
+                    windowManager.updateViewLayout(bubble, params)
+                } catch (e: Exception) {}
+            }
+            addListener(object : android.animation.Animator.AnimatorListener {
+                override fun onAnimationStart(a: android.animation.Animator) {}
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    // ゴミ箱が反応して消える
+                    trash.animate()
+                        .scaleX(1.3f)
+                        .scaleY(1.3f)
+                        .setDuration(100)
+                        .withEndAction {
+                            trash.animate()
+                                .scaleX(0f)
+                                .scaleY(0f)
+                                .alpha(0f)
+                                .setDuration(150)
+                                .start()
+                        }
+                        .start()
+
+                    bubble.animate()
+                        .alpha(0f)
+                        .scaleX(0f)
+                        .scaleY(0f)
+                        .setDuration(100)
+                        .withEndAction { stopSelf() }
+                        .start()
+                }
+                override fun onAnimationCancel(a: android.animation.Animator) {}
+                override fun onAnimationRepeat(a: android.animation.Animator) {}
+            })
+            start()
+        }
+    }
+
+    // 慣性アニメーション（ゴミ箱判定付き）
+    private fun applyFlingAnimation(
+        view: View,
+        params: WindowManager.LayoutParams,
+        trash: View,
+        velocityX: Float,
+        velocityY: Float,
+        screenWidth: Int,
+        screenHeight: Int
+    ) {
+        val friction = 0.92f
+        var vx = -velocityX / 30f
+        var vy = velocityY / 30f
+        val trashCenterX = screenWidth / 2
+        val trashCenterY = screenHeight - 100 - 65
+
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 500
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                vx *= friction
+                vy *= friction
+
+                params.x = (params.x + vx).toInt().coerceIn(0, screenWidth - 130)
+                params.y = (params.y + vy).toInt().coerceIn(0, screenHeight - 130)
+
+                // ゴミ箱との距離チェック
+                val bubbleCenterX = screenWidth - params.x - 65
+                val bubbleCenterY = params.y + 65
+                val distance = Math.sqrt(
+                    Math.pow((bubbleCenterX - trashCenterX).toDouble(), 2.0) +
+                    Math.pow((bubbleCenterY - trashCenterY).toDouble(), 2.0)
+                )
+
+                // ゴミ箱に近づいたらスケール変更（即座に切り替え）
+                val isNear = distance < 200
+                if (isNear && trash.scaleX < 1.2f) {
+                    trash.animate()
+                        .scaleX(1.3f)
+                        .scaleY(1.3f)
+                        .setDuration(50)
+                        .start()
+                } else if (!isNear && trash.scaleX > 1.1f) {
+                    trash.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(50)
+                        .start()
+                }
+
+                // ゴミ箱に十分近づいたら吸い込み
+                if (distance < 120) {
+                    cancel()
+                    animateToTrash(view, params, trash, screenWidth, screenHeight)
+                    return@addUpdateListener
+                }
+
+                try {
+                    windowManager.updateViewLayout(view, params)
+                } catch (e: Exception) {
+                    cancel()
+                }
+            }
+            addListener(object : android.animation.Animator.AnimatorListener {
+                override fun onAnimationStart(a: android.animation.Animator) {}
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    // 慣性終了後にゴミ箱を非表示
+                    trash.animate()
+                        .alpha(0f)
+                        .scaleX(0.5f)
+                        .scaleY(0.5f)
+                        .setDuration(200)
+                        .start()
+                }
+                override fun onAnimationCancel(a: android.animation.Animator) {}
+                override fun onAnimationRepeat(a: android.animation.Animator) {}
+            })
+        }
+        animator.start()
     }
 
     // パルスアニメーション（生きている感じを演出）
@@ -818,6 +1096,7 @@ class FloatingBubbleService : Service() {
             windowManager.removeView(it)
         }
         bubbleView?.let { windowManager.removeView(it) }
+        trashView?.let { windowManager.removeView(it) }
         BrowserActivity.webView?.destroy()
         BrowserActivity.webView = null
     }
