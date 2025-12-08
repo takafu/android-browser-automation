@@ -1,11 +1,11 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # Browser Automation Client Library
-# Termuxから Android Browser を制御するためのヘルパー関数
+# Helper functions to control Android Browser from Termux
 
 BASE_URL="http://localhost:8765"
 
-# ページに移動
+# Navigate to URL
 browser_goto() {
     local url="$1"
     curl -s -X POST "$BASE_URL/navigate" \
@@ -13,7 +13,7 @@ browser_goto() {
         -d "{\"url\":\"$url\"}" | jq -r '.message'
 }
 
-# JavaScriptを実行（結果なし）
+# Execute JavaScript (no return value)
 browser_execute() {
     local script="$1"
     curl -s -X POST "$BASE_URL/execute" \
@@ -21,7 +21,7 @@ browser_execute() {
         -d "{\"script\":$(echo "$script" | jq -R .)}" | jq -r '.message'
 }
 
-# JavaScriptを実行（結果を取得）
+# Execute JavaScript (with return value)
 browser_eval() {
     local script="$1"
     curl -s -X POST "$BASE_URL/eval" \
@@ -29,86 +29,86 @@ browser_eval() {
         -d "{\"script\":$(echo "$script" | jq -R .)}" | jq -r '.result'
 }
 
-# 現在のURLを取得
+# Get current URL
 browser_url() {
     curl -s "$BASE_URL/url" | jq -r '.url'
 }
 
-# ページタイトルを取得
+# Get page title
 browser_title() {
     curl -s "$BASE_URL/title" | jq -r '.title'
 }
 
-# HTML全体を取得
+# Get full HTML
 browser_html() {
     curl -s "$BASE_URL/html" | jq -r '.html'
 }
 
-# スクリーンショットを取得（Base64）
+# Take screenshot (Base64)
 browser_screenshot() {
     local output="${1:-screenshot.png}"
     curl -s "$BASE_URL/screenshot" | jq -r '.screenshot' | base64 -d > "$output"
     echo "Screenshot saved to $output"
 }
 
-# 戻る
+# Go back
 browser_back() {
     curl -s -X POST "$BASE_URL/back" | jq -r '.message'
 }
 
-# 進む
+# Go forward
 browser_forward() {
     curl -s -X POST "$BASE_URL/forward" | jq -r '.message'
 }
 
-# リロード
+# Reload page
 browser_refresh() {
     curl -s -X POST "$BASE_URL/refresh" | jq -r '.message'
 }
 
-# サーバー接続確認
+# Check server connection
 browser_ping() {
     curl -s "$BASE_URL/ping" | jq -r '.status'
 }
 
-# フローティングバブルを開始
+# Start floating bubble
 browser_bubble_start() {
     curl -s -X POST "$BASE_URL/bubble/start" | jq -r '.message'
 }
 
-# フローティングバブルを停止
+# Stop floating bubble
 browser_bubble_stop() {
     curl -s -X POST "$BASE_URL/bubble/stop" | jq -r '.message'
 }
 
-# ヘルプ表示
+# Show help
 browser_help() {
     cat << 'EOF'
-Browser Automation Client - 使い方
+Browser Automation Client - Usage
 
-基本操作:
-  browser_goto <url>          指定URLに移動
-  browser_back                戻る
-  browser_forward             進む
-  browser_refresh             リロード
+Navigation:
+  browser_goto <url>          Navigate to URL
+  browser_back                Go back
+  browser_forward             Go forward
+  browser_refresh             Reload page
 
-情報取得:
-  browser_url                 現在のURLを取得
-  browser_title               ページタイトルを取得
-  browser_html                HTML全体を取得
+Information:
+  browser_url                 Get current URL
+  browser_title               Get page title
+  browser_html                Get full HTML
 
-JavaScript実行:
-  browser_execute <script>    スクリプトを実行（結果なし）
-  browser_eval <script>       スクリプトを実行して結果を取得
+JavaScript:
+  browser_execute <script>    Execute script (no return)
+  browser_eval <script>       Execute script and get result
 
-その他:
-  browser_screenshot [file]   スクリーンショットを保存（デフォルト: screenshot.png）
-  browser_ping                サーバー接続確認
-  browser_bubble_start        フローティングバブルを表示（Termuxと同時表示可能）
-  browser_bubble_stop         フローティングバブルを閉じる
-  browser_help                このヘルプを表示
+Other:
+  browser_screenshot [file]   Save screenshot (default: screenshot.png)
+  browser_ping                Check server connection
+  browser_bubble_start        Show floating bubble (overlay with Termux)
+  browser_bubble_stop         Close floating bubble
+  browser_help                Show this help
 
-使用例:
+Examples:
   browser_goto "https://example.com"
   browser_title
   browser_eval "document.querySelector('h1').textContent"
