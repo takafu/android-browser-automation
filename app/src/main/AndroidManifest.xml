@@ -10,6 +10,7 @@
 
     <application
         android:label="Browser Automation"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="true">
 
@@ -36,7 +37,8 @@
             android:name=".AuthDialogActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:configChanges="orientation|screenSize" />
+            android:configChanges="orientation|screenSize"
+            android:excludeFromRecents="true" />
 
         <service
             android:name=".AutomationService"

@@ -4,7 +4,11 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -36,6 +40,9 @@ class FloatingBubbleService : Service() {
 
     companion object {
         private var instance: FloatingBubbleService? = null
+        private const val ACTION_RESTORE_OVERLAYS = "com.termux.browser.RESTORE_OVERLAYS"
+        private const val NOTIFICATION_CHANNEL_ID = "browser_restore"
+        private const val RESTORE_NOTIFICATION_ID = 2
 
         // Close window and return to bubble mode
         fun minimizeWindow() {
@@ -47,6 +54,9 @@ class FloatingBubbleService : Service() {
     private var bubbleView: View? = null
     private var trashView: View? = null
     private var trashParams: WindowManager.LayoutParams? = null
+    private var stashView: View? = null  // Top zone to hide browser
+    private var stashParams: WindowManager.LayoutParams? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
     private var floatingWindow: View? = null
     private var floatingWindowParams: WindowManager.LayoutParams? = null
     private var hiddenWebViewContainer: FrameLayout? = null  // Holds WebView in bubble state
@@ -118,6 +128,19 @@ class FloatingBubbleService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        android.util.Log.d("FloatingBubble", "onStartCommand: action=${intent?.action}")
+        // Handle restore action from notification
+        if (intent?.action == ACTION_RESTORE_OVERLAYS) {
+            android.util.Log.d("FloatingBubble", "Restoring overlays from notification")
+            restoreOverlays()
+            // Dismiss the notification
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(RESTORE_NOTIFICATION_ID)
+        }
+        return START_STICKY
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private fun createBubble() {
         // Create bubble with gradient, shadow, and animation
@@ -162,6 +185,7 @@ class FloatingBubbleService : Service() {
             x = 50
             y = 200
         }
+        bubbleParams = params  // Save to member variable
 
         var initialX = 0
         var initialY = 0
@@ -212,6 +236,48 @@ class FloatingBubbleService : Service() {
         trashParams = trashLayoutParams
         windowManager.addView(trash, trashLayoutParams)
 
+        // Create stash zone at top (to hide browser temporarily)
+        // Icon: Feather Icons "eye-off"
+        val stashSize = 130
+        val stash = ImageView(this).apply {
+            setImageResource(R.drawable.ic_eye_off)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            val padding = 28
+            setPadding(padding, padding, padding, padding)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                colors = intArrayOf(
+                    Color.parseColor("#667eea"),  // Purple (same as header)
+                    Color.parseColor("#764ba2")
+                )
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                orientation = GradientDrawable.Orientation.TL_BR
+            }
+            elevation = 16f
+            alpha = 0f  // Initially hidden
+            scaleX = 0.5f
+            scaleY = 0.5f
+        }
+
+        val stashLayoutParams = WindowManager.LayoutParams(
+            stashSize,
+            stashSize,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = 100
+        }
+
+        stashView = stash
+        stashParams = stashLayoutParams
+        windowManager.addView(stash, stashLayoutParams)
+
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
 
@@ -246,8 +312,14 @@ class FloatingBubbleService : Service() {
                     // Detect drag start
                     if (!isDragging && (deltaX > 10 || deltaY > 10)) {
                         isDragging = true
-                        // Show trash
+                        // Show trash and stash zones
                         trash.animate()
+                            .alpha(1f)
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .setDuration(200)
+                            .start()
+                        stash.animate()
                             .alpha(1f)
                             .scaleX(1f)
                             .scaleY(1f)
@@ -272,15 +344,39 @@ class FloatingBubbleService : Service() {
                         )
 
                         // Scale up trash when near (instant switch)
-                        val isNear = distance < 200
-                        if (isNear && trash.scaleX < 1.2f) {
+                        val isNearTrash = distance < 200
+                        if (isNearTrash && trash.scaleX < 1.2f) {
                             trash.animate()
                                 .scaleX(1.3f)
                                 .scaleY(1.3f)
                                 .setDuration(50)
                                 .start()
-                        } else if (!isNear && trash.scaleX > 1.1f) {
+                        } else if (!isNearTrash && trash.scaleX > 1.1f) {
                             trash.animate()
+                                .scaleX(1f)
+                                .scaleY(1f)
+                                .setDuration(50)
+                                .start()
+                        }
+
+                        // Check distance to stash zone (top)
+                        val stashCenterX = screenWidth / 2
+                        val stashCenterY = 100 + 65  // Stash center Y (top)
+                        val distanceToStash = Math.sqrt(
+                            Math.pow((bubbleCenterX - stashCenterX).toDouble(), 2.0) +
+                            Math.pow((bubbleCenterY - stashCenterY).toDouble(), 2.0)
+                        )
+
+                        // Scale up stash when near
+                        val isNearStash = distanceToStash < 200
+                        if (isNearStash && stash.scaleX < 1.2f) {
+                            stash.animate()
+                                .scaleX(1.3f)
+                                .scaleY(1.3f)
+                                .setDuration(50)
+                                .start()
+                        } else if (!isNearStash && stash.scaleX > 1.1f) {
+                            stash.animate()
                                 .scaleX(1f)
                                 .scaleY(1f)
                                 .setDuration(50)
@@ -304,20 +400,29 @@ class FloatingBubbleService : Service() {
                         .setDuration(150)
                         .start()
 
-                    // Check if dropped on trash
+                    // Check if dropped on trash or stash
                     val bubbleCenterX = screenWidth - params.x - 65
                     val bubbleCenterY = params.y + 65
                     val trashCenterX = screenWidth / 2
                     val trashCenterY = screenHeight - 100 - 65
+                    val stashCenterX = screenWidth / 2
+                    val stashCenterY = 100 + 65
 
-                    val distance = Math.sqrt(
+                    val distanceToTrash = Math.sqrt(
                         Math.pow((bubbleCenterX - trashCenterX).toDouble(), 2.0) +
                         Math.pow((bubbleCenterY - trashCenterY).toDouble(), 2.0)
                     )
+                    val distanceToStash = Math.sqrt(
+                        Math.pow((bubbleCenterX - stashCenterX).toDouble(), 2.0) +
+                        Math.pow((bubbleCenterY - stashCenterY).toDouble(), 2.0)
+                    )
 
-                    if (isDragging && distance < 200) {
+                    if (isDragging && distanceToTrash < 200) {
                         // Animate into trash
-                        animateToTrash(v, params, trash, screenWidth, screenHeight)
+                        animateToTrash(v, params, trash, stash, screenWidth, screenHeight)
+                    } else if (isDragging && distanceToStash < 200) {
+                        // Stash browser - hide and show notification
+                        animateToStash(v, params, trash, stash, screenWidth)
                     } else if (!isDragging) {
                         // Tap - open window
                         v.animate()
@@ -334,8 +439,8 @@ class FloatingBubbleService : Service() {
                             .start()
                         openFloatingWindow()
                     } else {
-                        // Fling animation (keep trash visible)
-                        applyFlingAnimation(v, params, trash, velocityX, velocityY, screenWidth, screenHeight)
+                        // Fling animation (keep trash/stash visible)
+                        applyFlingAnimation(v, params, trash, stash, velocityX, velocityY, screenWidth, screenHeight)
                     }
                     true
                 }
@@ -352,9 +457,12 @@ class FloatingBubbleService : Service() {
         bubble: View,
         params: WindowManager.LayoutParams,
         trash: View,
+        stash: View,
         screenWidth: Int,
         screenHeight: Int
     ) {
+        // Hide stash zone
+        stash.animate().alpha(0f).scaleX(0.5f).scaleY(0.5f).setDuration(150).start()
         // Trash center coordinates (bottom center of screen)
         val trashCenterX = screenWidth / 2
         val trashCenterY = screenHeight - 100 - 65
@@ -412,11 +520,93 @@ class FloatingBubbleService : Service() {
         }
     }
 
+    // Animation when stashed (hide browser)
+    private fun animateToStash(
+        bubble: View,
+        params: WindowManager.LayoutParams,
+        trash: View,
+        stash: View,
+        screenWidth: Int
+    ) {
+        // Hide trash zone
+        trash.animate().alpha(0f).scaleX(0.5f).scaleY(0.5f).setDuration(150).start()
+
+        // Stash center coordinates (top center of screen)
+        val stashCenterX = screenWidth / 2
+        val stashCenterY = 100 + 65
+
+        // Current bubble center coordinates
+        val startX = screenWidth - params.x - 65
+        val startY = params.y + 65
+
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 200
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener { animator ->
+                val t = animator.animatedValue as Float
+                // Move bubble toward stash center
+                val newCenterX = startX + (stashCenterX - startX) * t
+                val newCenterY = startY + (stashCenterY - startY) * t
+                params.x = (screenWidth - newCenterX - 65).toInt()
+                params.y = (newCenterY - 65).toInt()
+                bubble.scaleX = 1f - t * 0.5f
+                bubble.scaleY = 1f - t * 0.5f
+                try {
+                    windowManager.updateViewLayout(bubble, params)
+                } catch (e: Exception) {}
+            }
+            addListener(object : android.animation.Animator.AnimatorListener {
+                override fun onAnimationStart(a: android.animation.Animator) {}
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    // Stash reacts and disappears
+                    stash.animate()
+                        .scaleX(1.3f)
+                        .scaleY(1.3f)
+                        .setDuration(100)
+                        .withEndAction {
+                            stash.animate()
+                                .scaleX(0f)
+                                .scaleY(0f)
+                                .alpha(0f)
+                                .setDuration(150)
+                                .start()
+                        }
+                        .start()
+
+                    bubble.animate()
+                        .alpha(0f)
+                        .scaleX(0f)
+                        .scaleY(0f)
+                        .setDuration(100)
+                        .withEndAction {
+                            // Hide all overlays and show notification
+                            stashOverlays()
+                        }
+                        .start()
+                }
+                override fun onAnimationCancel(a: android.animation.Animator) {}
+                override fun onAnimationRepeat(a: android.animation.Animator) {}
+            })
+            start()
+        }
+    }
+
+    // Hide all overlays and show restore notification
+    private fun stashOverlays() {
+        try { floatingWindow?.let { windowManager.removeView(it) } } catch (e: Exception) {}
+        try { bubbleView?.let { windowManager.removeView(it) } } catch (e: Exception) {}
+        try { trashView?.let { windowManager.removeView(it) } } catch (e: Exception) {}
+        try { stashView?.let { windowManager.removeView(it) } } catch (e: Exception) {}
+        try { hiddenWebViewContainer?.let { windowManager.removeView(it) } } catch (e: Exception) {}
+        showRestoreNotification()
+    }
+
     // Fling animation with trash detection
     private fun applyFlingAnimation(
         view: View,
         params: WindowManager.LayoutParams,
         trash: View,
+        stash: View,
         velocityX: Float,
         velocityY: Float,
         screenWidth: Int,
@@ -427,6 +617,8 @@ class FloatingBubbleService : Service() {
         var vy = velocityY / 30f
         val trashCenterX = screenWidth / 2
         val trashCenterY = screenHeight - 100 - 65
+        val stashCenterX = screenWidth / 2
+        val stashCenterY = 100 + 65
 
         val animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 500
@@ -438,34 +630,48 @@ class FloatingBubbleService : Service() {
                 params.x = (params.x + vx).toInt().coerceIn(0, screenWidth - 130)
                 params.y = (params.y + vy).toInt().coerceIn(0, screenHeight - 130)
 
-                // Check distance to trash
                 val bubbleCenterX = screenWidth - params.x - 65
                 val bubbleCenterY = params.y + 65
-                val distance = Math.sqrt(
+
+                // Check distance to trash
+                val distanceToTrash = Math.sqrt(
                     Math.pow((bubbleCenterX - trashCenterX).toDouble(), 2.0) +
                     Math.pow((bubbleCenterY - trashCenterY).toDouble(), 2.0)
                 )
 
-                // Scale trash when near (instant switch)
-                val isNear = distance < 200
-                if (isNear && trash.scaleX < 1.2f) {
-                    trash.animate()
-                        .scaleX(1.3f)
-                        .scaleY(1.3f)
-                        .setDuration(50)
-                        .start()
-                } else if (!isNear && trash.scaleX > 1.1f) {
-                    trash.animate()
-                        .scaleX(1f)
-                        .scaleY(1f)
-                        .setDuration(50)
-                        .start()
+                // Check distance to stash
+                val distanceToStash = Math.sqrt(
+                    Math.pow((bubbleCenterX - stashCenterX).toDouble(), 2.0) +
+                    Math.pow((bubbleCenterY - stashCenterY).toDouble(), 2.0)
+                )
+
+                // Scale trash when near
+                val isNearTrash = distanceToTrash < 200
+                if (isNearTrash && trash.scaleX < 1.2f) {
+                    trash.animate().scaleX(1.3f).scaleY(1.3f).setDuration(50).start()
+                } else if (!isNearTrash && trash.scaleX > 1.1f) {
+                    trash.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+                }
+
+                // Scale stash when near
+                val isNearStash = distanceToStash < 200
+                if (isNearStash && stash.scaleX < 1.2f) {
+                    stash.animate().scaleX(1.3f).scaleY(1.3f).setDuration(50).start()
+                } else if (!isNearStash && stash.scaleX > 1.1f) {
+                    stash.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
                 }
 
                 // Suck into trash when close enough
-                if (distance < 120) {
+                if (distanceToTrash < 120) {
                     cancel()
-                    animateToTrash(view, params, trash, screenWidth, screenHeight)
+                    animateToTrash(view, params, trash, stash, screenWidth, screenHeight)
+                    return@addUpdateListener
+                }
+
+                // Suck into stash when close enough
+                if (distanceToStash < 120) {
+                    cancel()
+                    animateToStash(view, params, trash, stash, screenWidth)
                     return@addUpdateListener
                 }
 
@@ -478,13 +684,9 @@ class FloatingBubbleService : Service() {
             addListener(object : android.animation.Animator.AnimatorListener {
                 override fun onAnimationStart(a: android.animation.Animator) {}
                 override fun onAnimationEnd(a: android.animation.Animator) {
-                    // Hide trash after fling ends
-                    trash.animate()
-                        .alpha(0f)
-                        .scaleX(0.5f)
-                        .scaleY(0.5f)
-                        .setDuration(200)
-                        .start()
+                    // Hide trash and stash after fling ends
+                    trash.animate().alpha(0f).scaleX(0.5f).scaleY(0.5f).setDuration(200).start()
+                    stash.animate().alpha(0f).scaleX(0.5f).scaleY(0.5f).setDuration(200).start()
                 }
                 override fun onAnimationCancel(a: android.animation.Animator) {}
                 override fun onAnimationRepeat(a: android.animation.Animator) {}
@@ -987,8 +1189,8 @@ class FloatingBubbleService : Service() {
                 // Force desktop layout with large viewport
                 layoutAlgorithm = android.webkit.WebSettings.LayoutAlgorithm.NORMAL
 
-                // Desktop UserAgent (latest Chrome)
-                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                // Android Chrome UserAgent (without wv token to avoid WebView detection)
+                userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 
                 // Other settings
                 javaScriptCanOpenWindowsAutomatically = true
@@ -1034,9 +1236,25 @@ class FloatingBubbleService : Service() {
 
                     // Inject JavaScript to avoid WebView detection
                     view?.evaluateJavascript("""
-                        Object.defineProperty(navigator, 'webdriver', {
-                            get: () => undefined
-                        });
+                        (function() {
+                            // Hide webdriver property
+                            Object.defineProperty(navigator, 'webdriver', {
+                                get: () => undefined
+                            });
+
+                            // Create fake window.chrome object (real Chrome has this)
+                            if (!window.chrome) {
+                                window.chrome = {
+                                    runtime: {
+                                        connect: function() {},
+                                        sendMessage: function() {}
+                                    },
+                                    loadTimes: function() {},
+                                    csi: function() {},
+                                    app: {}
+                                };
+                            }
+                        })();
                     """.trimIndent(), null)
                 }
 
@@ -1139,17 +1357,45 @@ class FloatingBubbleService : Service() {
 
         // Temporarily remove all overlays from WindowManager (so Bitwarden can receive touches)
         try {
-            floatingWindow?.let { windowManager.removeView(it) }
-        } catch (e: Exception) {}
+            floatingWindow?.let {
+                windowManager.removeView(it)
+                android.util.Log.d("FloatingBubble", "Removed floatingWindow")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingBubble", "Failed to remove floatingWindow: ${e.message}")
+        }
         try {
-            bubbleView?.let { windowManager.removeView(it) }
-        } catch (e: Exception) {}
+            bubbleView?.let {
+                windowManager.removeView(it)
+                android.util.Log.d("FloatingBubble", "Removed bubbleView")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingBubble", "Failed to remove bubbleView: ${e.message}")
+        }
         try {
-            trashView?.let { windowManager.removeView(it) }
-        } catch (e: Exception) {}
+            trashView?.let {
+                windowManager.removeView(it)
+                android.util.Log.d("FloatingBubble", "Removed trashView")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingBubble", "Failed to remove trashView: ${e.message}")
+        }
         try {
-            hiddenWebViewContainer?.let { windowManager.removeView(it) }
-        } catch (e: Exception) {}
+            stashView?.let {
+                windowManager.removeView(it)
+                android.util.Log.d("FloatingBubble", "Removed stashView")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingBubble", "Failed to remove stashView: ${e.message}")
+        }
+        try {
+            hiddenWebViewContainer?.let {
+                windowManager.removeView(it)
+                android.util.Log.d("FloatingBubble", "Removed hiddenWebViewContainer")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingBubble", "Failed to remove hiddenWebViewContainer: ${e.message}")
+        }
 
         // Set callbacks
         AuthDialogActivity.onCredentialsEntered = { username, password ->
@@ -1157,9 +1403,9 @@ class FloatingBubbleService : Service() {
             injectCredentials(username, password)
         }
 
-        // Re-add overlays when dialog closes
+        // Show notification to restore overlays when dialog closes
         AuthDialogActivity.onDialogClosed = {
-            restoreOverlays()
+            showRestoreNotification()
         }
 
         // Launch AuthDialogActivity (pass URL)
@@ -1180,9 +1426,12 @@ class FloatingBubbleService : Service() {
 
     // Re-add overlays (after auth dialog closes)
     private fun restoreOverlays() {
+        android.util.Log.d("FloatingBubble", "restoreOverlays called")
         android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.util.Log.d("FloatingBubble", "restoreOverlays: running on main thread")
             // Re-add hiddenWebViewContainer
             hiddenWebViewContainer?.let { container ->
+                android.util.Log.d("FloatingBubble", "restoreOverlays: adding hiddenWebViewContainer")
                 val params = WindowManager.LayoutParams(
                     1080,
                     1920,
@@ -1200,8 +1449,11 @@ class FloatingBubbleService : Service() {
                 }
                 try {
                     windowManager.addView(container, params)
-                } catch (e: Exception) {}
-            }
+                    android.util.Log.d("FloatingBubble", "restoreOverlays: hiddenWebViewContainer added")
+                } catch (e: Exception) {
+                    android.util.Log.e("FloatingBubble", "restoreOverlays: failed to add hiddenWebViewContainer: ${e.message}")
+                }
+            } ?: android.util.Log.w("FloatingBubble", "restoreOverlays: hiddenWebViewContainer is null")
 
             // Re-add trashView
             trashView?.let { trash ->
@@ -1212,29 +1464,33 @@ class FloatingBubbleService : Service() {
                 }
             }
 
-            // Re-add bubbleView (in hidden state)
-            bubbleView?.let { bubble ->
-                val bubbleParams = WindowManager.LayoutParams(
-                    130, 130,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    else
-                        WindowManager.LayoutParams.TYPE_PHONE,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                    PixelFormat.TRANSLUCENT
-                ).apply {
-                    gravity = Gravity.TOP or Gravity.END
-                    x = 50
-                    y = 200
+            // Re-add stashView
+            stashView?.let { stash ->
+                stashParams?.let { params ->
+                    try {
+                        windowManager.addView(stash, params)
+                    } catch (e: Exception) {}
                 }
-                bubble.visibility = View.INVISIBLE
-                try {
-                    windowManager.addView(bubble, bubbleParams)
-                } catch (e: Exception) {}
             }
 
-            // Re-add floatingWindow
+            // Re-add bubbleView
+            bubbleView?.let { bubble ->
+                bubbleParams?.let { params ->
+                    // Reset position to default
+                    params.x = 50
+                    params.y = 200
+                    // Show bubble if window is not open, hide if window is open
+                    bubble.visibility = if (floatingWindow == null) View.VISIBLE else View.INVISIBLE
+                    bubble.alpha = 1f
+                    bubble.scaleX = 1f
+                    bubble.scaleY = 1f
+                    try {
+                        windowManager.addView(bubble, params)
+                    } catch (e: Exception) {}
+                }
+            }
+
+            // Re-add floatingWindow (if it was open)
             floatingWindow?.let { window ->
                 floatingWindowParams?.let { params ->
                     // Restore saved position/size
@@ -1250,6 +1506,49 @@ class FloatingBubbleService : Service() {
                 }
             }
         }
+    }
+
+    // Show notification to restore browser window
+    private fun showRestoreNotification() {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        // Create notification channel (required for Android O+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Browser Restore",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Tap to restore browser window"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        // Create intent to restore overlays
+        val restoreIntent = Intent(this, FloatingBubbleService::class.java).apply {
+            action = ACTION_RESTORE_OVERLAYS
+        }
+        val pendingIntent = PendingIntent.getService(
+            this,
+            0,
+            restoreIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Build notification
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            android.app.Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+        } else {
+            android.app.Notification.Builder(this)
+        }.apply {
+            setSmallIcon(R.drawable.ic_eye)
+            setContentTitle("Browser Hidden")
+            setContentText("Tap to restore browser window")
+            setContentIntent(pendingIntent)
+            setAutoCancel(true)
+        }.build()
+
+        notificationManager.notify(RESTORE_NOTIFICATION_ID, notification)
     }
 
     // Inject credentials into WebView
@@ -1391,6 +1690,7 @@ class FloatingBubbleService : Service() {
         }
         bubbleView?.let { windowManager.removeView(it) }
         trashView?.let { windowManager.removeView(it) }
+        stashView?.let { windowManager.removeView(it) }
         BrowserActivity.webView?.destroy()
         BrowserActivity.webView = null
     }
