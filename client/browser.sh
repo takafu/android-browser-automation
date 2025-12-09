@@ -81,6 +81,30 @@ browser_bubble_stop() {
     curl -s -X POST "$BASE_URL/bubble/stop" | jq -r '.message'
 }
 
+# Get current UA mode
+browser_ua() {
+    curl -s "$BASE_URL/ua" | jq -r '"Mode: \(.mode)\nUA: \(.userAgent)"'
+}
+
+# Set UA to default (Desktop Chrome)
+browser_ua_default() {
+    curl -s -X POST "$BASE_URL/ua/default" | jq -r '.message'
+}
+
+# Set UA to google-login (Android Chrome + WebView bypass)
+# Use this before navigating to accounts.google.com
+browser_ua_google() {
+    curl -s -X POST "$BASE_URL/ua/google-login" | jq -r '.message'
+}
+
+# Set custom UA
+browser_ua_custom() {
+    local ua="$1"
+    curl -s -X POST "$BASE_URL/ua/custom" \
+        -H "Content-Type: application/json" \
+        -d "{\"ua\":\"$ua\"}" | jq -r '.message'
+}
+
 # Show help
 browser_help() {
     cat << 'EOF'
@@ -101,6 +125,12 @@ JavaScript:
   browser_execute <script>    Execute script (no return)
   browser_eval <script>       Execute script and get result
 
+UserAgent:
+  browser_ua                  Show current UA mode
+  browser_ua_default          Set to Desktop Chrome (default)
+  browser_ua_google           Set to google-login mode (for Google login)
+  browser_ua_custom <ua>      Set custom UA string
+
 Other:
   browser_screenshot [file]   Save screenshot (default: screenshot.png)
   browser_ping                Check server connection
@@ -113,5 +143,11 @@ Examples:
   browser_title
   browser_eval "document.querySelector('h1').textContent"
   browser_screenshot my-screenshot.png
+
+  # Google login flow
+  browser_ua_google
+  browser_goto "https://accounts.google.com"
+  # ... complete login ...
+  browser_ua_default
 EOF
 }

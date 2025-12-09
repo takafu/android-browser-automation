@@ -44,10 +44,63 @@ class FloatingBubbleService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "browser_restore"
         private const val RESTORE_NOTIFICATION_ID = 2
 
+        // UserAgent presets
+        const val UA_MODE_DEFAULT = "default"
+        const val UA_MODE_GOOGLE_LOGIN = "google-login"
+        const val UA_MODE_CUSTOM = "custom"
+
+        // Desktop Chrome (default) - for full-featured web apps
+        private const val UA_DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+        // Android Chrome without "wv" token - bypasses Google's WebView detection
+        // Google checks for: 1) "wv" in UA string, 2) window.chrome object existence
+        // This UA combined with window.chrome injection allows Google login in WebView
+        private const val UA_GOOGLE_LOGIN = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+
+        // Current UA mode
+        private var currentUaMode = UA_MODE_DEFAULT
+        private var customUa: String? = null
+
         // Close window and return to bubble mode
         fun minimizeWindow() {
             instance?.minimizeToToBubble()
         }
+
+        // Get current UA mode
+        fun getUaMode(): String = currentUaMode
+
+        // Get current UA string
+        fun getCurrentUa(): String = when (currentUaMode) {
+            UA_MODE_GOOGLE_LOGIN -> UA_GOOGLE_LOGIN
+            UA_MODE_CUSTOM -> customUa ?: UA_DESKTOP
+            else -> UA_DESKTOP
+        }
+
+        // Set UA mode
+        fun setUaMode(mode: String, custom: String? = null): Boolean {
+            return when (mode) {
+                UA_MODE_DEFAULT, UA_MODE_GOOGLE_LOGIN -> {
+                    currentUaMode = mode
+                    customUa = null
+                    instance?.applyCurrentUa()
+                    true
+                }
+                UA_MODE_CUSTOM -> {
+                    if (custom != null) {
+                        currentUaMode = mode
+                        customUa = custom
+                        instance?.applyCurrentUa()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                else -> false
+            }
+        }
+
+        // Check if google-login mode (for conditional JS injection)
+        fun isGoogleLoginMode(): Boolean = currentUaMode == UA_MODE_GOOGLE_LOGIN
     }
 
     private lateinit var windowManager: WindowManager
@@ -1192,8 +1245,8 @@ class FloatingBubbleService : Service() {
                 // Force desktop layout with large viewport
                 layoutAlgorithm = android.webkit.WebSettings.LayoutAlgorithm.NORMAL
 
-                // Android Chrome UserAgent (without wv token to avoid WebView detection)
-                userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+                // Use current UA mode (default: desktop Chrome)
+                userAgentString = getCurrentUa()
 
                 // Other settings
                 javaScriptCanOpenWindowsAutomatically = true
@@ -1237,28 +1290,31 @@ class FloatingBubbleService : Service() {
                         authButton?.visibility = View.GONE
                     }
 
-                    // Inject JavaScript to avoid WebView detection
-                    view?.evaluateJavascript("""
-                        (function() {
-                            // Hide webdriver property
-                            Object.defineProperty(navigator, 'webdriver', {
-                                get: () => undefined
-                            });
+                    // Inject JavaScript to avoid WebView detection (only in google-login mode)
+                    // Google checks for: 1) navigator.webdriver, 2) window.chrome object
+                    if (isGoogleLoginMode()) {
+                        view?.evaluateJavascript("""
+                            (function() {
+                                // Hide webdriver property
+                                Object.defineProperty(navigator, 'webdriver', {
+                                    get: () => undefined
+                                });
 
-                            // Create fake window.chrome object (real Chrome has this)
-                            if (!window.chrome) {
-                                window.chrome = {
-                                    runtime: {
-                                        connect: function() {},
-                                        sendMessage: function() {}
-                                    },
-                                    loadTimes: function() {},
-                                    csi: function() {},
-                                    app: {}
-                                };
-                            }
-                        })();
-                    """.trimIndent(), null)
+                                // Create fake window.chrome object (real Chrome has this)
+                                if (!window.chrome) {
+                                    window.chrome = {
+                                        runtime: {
+                                            connect: function() {},
+                                            sendMessage: function() {}
+                                        },
+                                        loadTimes: function() {},
+                                        csi: function() {},
+                                        app: {}
+                                    };
+                                }
+                            })();
+                        """.trimIndent(), null)
+                    }
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -1667,6 +1723,13 @@ class FloatingBubbleService : Service() {
                     authButton?.visibility = View.GONE
                 }
             }
+        }
+    }
+
+    // Apply current UA to WebView (called when UA mode changes)
+    private fun applyCurrentUa() {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            BrowserActivity.webView?.settings?.userAgentString = getCurrentUa()
         }
     }
 

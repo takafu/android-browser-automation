@@ -136,6 +136,11 @@ class AutomationService : Service() {
                 uri == "/bubble/start" && method == Method.POST -> handleStartBubble()
                 uri == "/bubble/stop" && method == Method.POST -> handleStopBubble()
                 uri == "/bubble/minimize" && method == Method.POST -> handleMinimizeBubble()
+                // UserAgent preset endpoints
+                uri == "/ua" && method == Method.GET -> handleGetUa()
+                uri == "/ua/default" && method == Method.POST -> handleSetUaDefault()
+                uri == "/ua/google-login" && method == Method.POST -> handleSetUaGoogleLogin()
+                uri == "/ua/custom" && method == Method.POST -> handleSetUaCustom(session)
                 else -> newFixedLengthResponse(
                     Response.Status.NOT_FOUND,
                     "application/json",
@@ -375,6 +380,48 @@ class AutomationService : Service() {
         private fun handleMinimizeBubble(): Response {
             FloatingBubbleService.minimizeWindow()
             return successResponse("Window minimized to bubble")
+        }
+
+        // UserAgent preset handlers
+        private fun handleGetUa(): Response {
+            val mode = FloatingBubbleService.getUaMode()
+            val ua = FloatingBubbleService.getCurrentUa()
+            return successResponse("Current UA mode: $mode",
+                "mode" to mode,
+                "userAgent" to ua
+            )
+        }
+
+        private fun handleSetUaDefault(): Response {
+            FloatingBubbleService.setUaMode(FloatingBubbleService.UA_MODE_DEFAULT)
+            return successResponse("UA set to default (Desktop Chrome)",
+                "mode" to FloatingBubbleService.UA_MODE_DEFAULT,
+                "userAgent" to FloatingBubbleService.getCurrentUa()
+            )
+        }
+
+        private fun handleSetUaGoogleLogin(): Response {
+            // Google login mode: Android Chrome UA + window.chrome injection
+            // Bypasses Google's WebView detection
+            FloatingBubbleService.setUaMode(FloatingBubbleService.UA_MODE_GOOGLE_LOGIN)
+            return successResponse("UA set to google-login (Android Chrome + WebView bypass)",
+                "mode" to FloatingBubbleService.UA_MODE_GOOGLE_LOGIN,
+                "userAgent" to FloatingBubbleService.getCurrentUa()
+            )
+        }
+
+        private fun handleSetUaCustom(session: IHTTPSession): Response {
+            val params = parseBody(session)
+            val ua = params["ua"] as? String
+            return if (ua != null) {
+                FloatingBubbleService.setUaMode(FloatingBubbleService.UA_MODE_CUSTOM, ua)
+                successResponse("UA set to custom",
+                    "mode" to FloatingBubbleService.UA_MODE_CUSTOM,
+                    "userAgent" to ua
+                )
+            } else {
+                errorResponse("Missing 'ua' parameter")
+            }
         }
 
         private fun parseBody(session: IHTTPSession): Map<String, Any> {
