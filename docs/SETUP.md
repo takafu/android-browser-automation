@@ -91,8 +91,8 @@ adb shell cmd deviceidle whitelist +com.termux
 
 ```bash
 cd ~
-git clone https://github.com/takafu/android-browser-automation
-cd android-browser-automation
+git clone https://github.com/takafu/webdroid
+cd webdroid
 
 cat > local.properties << 'EOF'
 sdk.dir=/data/data/com.termux/files/home/android-sdk
@@ -107,7 +107,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## Step 4: Test
 
 ```bash
-adb shell am start -n com.termux.browser/.BrowserActivity
+adb shell am start -n io.github.takafu.webdroid/.BrowserActivity
 
 source client/browser.sh
 browser_ping
@@ -133,7 +133,7 @@ Use PC for initial setup (USB + `adb tcpip 5555`).
 ### Can't Connect to HTTP Server
 
 ```bash
-adb shell am start -n com.termux.browser/.BrowserActivity
+adb shell am start -n io.github.takafu.webdroid/.BrowserActivity
 sleep 3
 curl http://localhost:8765/ping
 ```

@@ -1,4 +1,4 @@
-package com.termux.browser
+package io.github.takafu.webdroid
 
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
@@ -40,7 +40,7 @@ class FloatingBubbleService : Service() {
 
     companion object {
         private var instance: FloatingBubbleService? = null
-        private const val ACTION_RESTORE_OVERLAYS = "com.termux.browser.RESTORE_OVERLAYS"
+        private const val ACTION_RESTORE_OVERLAYS = "io.github.takafu.webdroid.RESTORE_OVERLAYS"
         private const val NOTIFICATION_CHANNEL_ID = "browser_restore"
         private const val RESTORE_NOTIFICATION_ID = 2
 

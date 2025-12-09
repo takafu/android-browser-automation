@@ -1,4 +1,4 @@
-# Android Browser Automation
+# WebDroid
 
 A WebView-based browser automation app controllable from Termux via HTTP API. Features a floating bubble interface for overlay browsing.
 
@@ -16,7 +16,7 @@ A WebView-based browser automation app controllable from Termux via HTTP API. Fe
 ### 1. Build & Install
 
 ```bash
-cd ~/android-browser-automation
+cd ~/webdroid
 gradle assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -24,13 +24,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ### 2. Launch
 
 ```bash
-adb shell am start -n com.termux.browser/.BrowserActivity
+adb shell am start -n io.github.takafu.webdroid/.BrowserActivity
 ```
 
 ### 3. Control from Termux
 
 ```bash
-source ~/android-browser-automation/client/browser.sh
+source ~/webdroid/client/browser.sh
 
 browser_goto "https://example.com"
 browser_title
@@ -76,7 +76,7 @@ curl -X POST http://localhost:8765/eval \
 ## Client Library
 
 ```bash
-source ~/android-browser-automation/client/browser.sh
+source ~/webdroid/client/browser.sh
 
 browser_goto <url>          # Navigate to URL
 browser_back                # Go back

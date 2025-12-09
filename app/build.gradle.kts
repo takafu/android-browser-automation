@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.termux.browser"
+    namespace = "io.github.takafu.webdroid"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.termux.browser"
+        applicationId = "io.github.takafu.webdroid"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

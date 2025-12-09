@@ -50,10 +50,10 @@ adb connect 192.168.x.x:5555
 
 ```bash
 # Check if app is running
-adb shell pidof com.termux.browser
+adb shell pidof io.github.takafu.webdroid
 
 # Start app if not running
-adb shell am start -n com.termux.browser/.BrowserActivity
+adb shell am start -n io.github.takafu.webdroid/.BrowserActivity
 sleep 3
 curl http://localhost:8765/ping
 ```
@@ -63,8 +63,8 @@ curl http://localhost:8765/ping
 Server crashed. Check logs and restart:
 ```bash
 adb logcat -d -s AndroidRuntime:E
-adb shell am force-stop com.termux.browser
-adb shell am start -n com.termux.browser/.BrowserActivity
+adb shell am force-stop io.github.takafu.webdroid
+adb shell am start -n io.github.takafu.webdroid/.BrowserActivity
 ```
 
 ---
@@ -104,9 +104,9 @@ adb shell cmd deviceidle whitelist +com.termux
 ## Reset Everything
 
 ```bash
-adb uninstall com.termux.browser
+adb uninstall io.github.takafu.webdroid
 rm -rf ~/.gradle/caches/
-cd ~/android-browser-automation
+cd ~/webdroid
 gradle clean
 gradle assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk

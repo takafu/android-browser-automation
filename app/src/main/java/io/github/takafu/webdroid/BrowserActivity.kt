@@ -1,4 +1,4 @@
-package com.termux.browser
+package io.github.takafu.webdroid
 
 import android.annotation.SuppressLint
 import android.app.Activity

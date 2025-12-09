@@ -4,7 +4,7 @@
 
 set -e
 
-APP_PACKAGE="com.termux.browser"
+APP_PACKAGE="io.github.takafu.webdroid"
 APP_ACTIVITY="BrowserActivity"
 
 echo "Building APK..."

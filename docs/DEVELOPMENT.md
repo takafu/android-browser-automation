@@ -3,8 +3,8 @@
 ## Project Structure
 
 ```
-android-browser-automation/
-├── app/src/main/java/com/termux/browser/
+webdroid/
+├── app/src/main/java/io/github/takafu/webdroid/
 │   ├── BrowserActivity.kt        # Entry point, starts services
 │   ├── FloatingBubbleService.kt  # Floating UI and WebView
 │   ├── AutomationService.kt      # HTTP server
@@ -47,8 +47,8 @@ gradle assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 # Restart app
-adb shell am force-stop com.termux.browser
-adb shell am start -n com.termux.browser/.BrowserActivity
+adb shell am force-stop io.github.takafu.webdroid
+adb shell am start -n io.github.takafu.webdroid/.BrowserActivity
 
 # Test
 source client/browser.sh

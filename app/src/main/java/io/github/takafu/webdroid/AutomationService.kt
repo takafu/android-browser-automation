@@ -1,4 +1,4 @@
-package com.termux.browser
+package io.github.takafu.webdroid
 
 import android.app.Notification
 import android.app.NotificationChannel

@@ -120,7 +120,7 @@ curl http://localhost:8765/ping
 ## Client Library
 
 ```bash
-source ~/android-browser-automation/client/browser.sh
+source ~/webdroid/client/browser.sh
 
 browser_goto <url>          # Navigate
 browser_back                # Go back
