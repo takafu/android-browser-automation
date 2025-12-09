@@ -237,7 +237,7 @@ class FloatingBubbleService : Service() {
         windowManager.addView(trash, trashLayoutParams)
 
         // Create stash zone at top (to hide browser temporarily)
-        // Icon: Feather Icons "eye-off"
+        // Icon: Feather Icons "eye-off" (hide browser)
         val stashSize = 130
         val stash = ImageView(this).apply {
             setImageResource(R.drawable.ic_eye_off)
@@ -1554,7 +1554,7 @@ class FloatingBubbleService : Service() {
         } else {
             android.app.Notification.Builder(this)
         }.apply {
-            setSmallIcon(R.drawable.ic_eye)
+            setSmallIcon(R.drawable.ic_globe)
             setContentTitle("Browser Hidden")
             setContentText("Tap to restore browser window")
             setContentIntent(pendingIntent)
